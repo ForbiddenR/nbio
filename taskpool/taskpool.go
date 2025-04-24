@@ -21,10 +21,13 @@ type TaskPool struct {
 	caller        func(f func())
 }
 
-// Go .
-func (tp *TaskPool) Go(f func()) {
+// fork .
+//
+//go:norace
+func (tp *TaskPool) fork(f func()) bool {
 	if atomic.AddInt64(&tp.concurrent, 1) < tp.maxConcurrent {
 		go func() {
+			defer atomic.AddInt64(&tp.concurrent, -1)
 			tp.caller(f)
 			for {
 				select {
@@ -37,9 +40,29 @@ func (tp *TaskPool) Go(f func()) {
 				}
 			}
 		}()
+		return true
+	}
+	return false
+}
+
+// Call .
+//
+//go:norace
+func (tp *TaskPool) Call(f func()) {
+	tp.caller(f)
+}
+
+// Go .
+//
+//go:norace
+func (tp *TaskPool) Go(f func()) {
+	// If current goroutine num is less than maxConcurrent,
+	// creat a new goroutine to exec new task.
+	if tp.fork(f) {
 		return
 	}
 
+	// Else push the new task into chan/queue.
 	atomic.AddInt64(&tp.concurrent, -1)
 	select {
 	case tp.chQqueue <- f:
@@ -48,12 +71,16 @@ func (tp *TaskPool) Go(f func()) {
 }
 
 // Stop .
+//
+//go:norace
 func (tp *TaskPool) Stop() {
 	atomic.AddInt64(&tp.concurrent, tp.maxConcurrent)
 	close(tp.chClose)
 }
 
-// New .
+// New creates and returns a TaskPool.
+//
+//go:norace
 func New(maxConcurrent int, chQqueueSize int, v ...interface{}) *TaskPool {
 	tp := &TaskPool{
 		maxConcurrent: int64(maxConcurrent - 1),
@@ -68,7 +95,6 @@ func New(maxConcurrent int, chQqueueSize int, v ...interface{}) *TaskPool {
 				buf = buf[:runtime.Stack(buf, false)]
 				logging.Error("taskpool call failed: %v\n%v\n", err, *(*string)(unsafe.Pointer(&buf)))
 			}
-			atomic.AddInt64(&tp.concurrent, -1)
 		}()
 		f()
 	}
@@ -84,6 +110,10 @@ func New(maxConcurrent int, chQqueueSize int, v ...interface{}) *TaskPool {
 		for {
 			select {
 			case f := <-tp.chQqueue:
+				if tp.fork(f) {
+					continue
+				}
+
 				if f != nil {
 					tp.caller(f)
 				}

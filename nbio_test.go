@@ -13,12 +13,15 @@ import (
 	"time"
 )
 
-var addr = "127.0.0.1:8888"
+var addr = "127.0.0.1:9999"
 var testfile = "test_tmp.file"
-var gopher *Engine
+var engine *Engine
+var testFileSize = 1024 * 1024 * 32
+
+const osWindows = "windows"
 
 func init() {
-	if err := os.WriteFile(testfile, make([]byte, 1024*100), 0600); err != nil {
+	if err := os.WriteFile(testfile, make([]byte, testFileSize), 0600); err != nil {
 		log.Panicf("write file failed: %v", err)
 	}
 
@@ -28,35 +31,75 @@ func init() {
 		Addrs:   addrs,
 	})
 
+	type writtenSizeSession struct {
+		sumRecv int
+		sumSend int
+		isFile  bool
+	}
 	g.OnOpen(func(c *Conn) {
+		wsess := &writtenSizeSession{}
+		c.SetSession(wsess)
 		c.SetReadDeadline(time.Now().Add(time.Second * 10))
 	})
 	g.OnData(func(c *Conn, data []byte) {
+		var wsess *writtenSizeSession
+		if session := c.Session(); session == nil {
+			panic("invalid session nil")
+		} else {
+			wsess = session.(*writtenSizeSession)
+			wsess.sumRecv += len(data)
+		}
+
 		if len(data) == 8 && string(data) == "sendfile" {
-			fd, err := os.Open(testfile)
+			wsess.isFile = true
+			file, err := os.Open(testfile)
 			if err != nil {
 				log.Panicf("open file failed: %v", err)
 			}
 
-			if _, err = c.Sendfile(fd, 0); err != nil {
+			if _, err = c.Sendfile(file, 0); err != nil {
 				panic(err)
 			}
 
-			if err := fd.Close(); err != nil {
+			if err := file.Close(); err != nil {
 				log.Panicf("close file failed: %v", err)
 			}
 		} else {
 			c.Write(append([]byte{}, data...))
 		}
 	})
-	g.OnClose(func(c *Conn, err error) {})
+
+	g.OnWrittenSize(func(c *Conn, b []byte, n int) {
+		if session := c.Session(); session == nil {
+			panic("invalid session nil")
+		} else {
+			wsess := session.(*writtenSizeSession)
+			wsess.sumSend += n
+		}
+	})
+	g.OnClose(func(c *Conn, err error) {
+		session := c.Session()
+		if session == nil {
+			panic("invalid session nil")
+		}
+		wsess := session.(*writtenSizeSession)
+		if wsess.isFile {
+			if wsess.sumSend != testFileSize {
+				panic(fmt.Errorf("invalid send size for sendfile: %v, %v", wsess.sumSend, testFileSize))
+			}
+		} else {
+			if wsess.sumSend != wsess.sumRecv {
+				panic("invalid send size: not equal to recv size")
+			}
+		}
+	})
 
 	err := g.Start()
 	if err != nil {
 		log.Panicf("Start failed: %v\n", err)
 	}
 
-	gopher = g
+	engine = g
 }
 
 func TestEcho(t *testing.T) {
@@ -81,14 +124,14 @@ func TestEcho(t *testing.T) {
 		c.SetNoDelay(true)
 		c.SetKeepAlive(true)
 		c.SetKeepAlivePeriod(time.Second * 60)
-		c.SetDeadline(time.Now().Add(time.Second))
+		c.SetDeadline(time.Now().Add(time.Second * 10))
 		c.SetReadBuffer(1024 * 4)
 		c.SetWriteBuffer(1024 * 4)
 		log.Printf("connected, local addr: %v, remote addr: %v", c.LocalAddr(), c.RemoteAddr())
 	})
-	g.BeforeWrite(func(c *Conn) {
-		c.SetWriteDeadline(time.Now().Add(time.Second * 5))
-	})
+	// g.BeforeWrite(func(c *Conn) {
+	// 	c.SetWriteDeadline(time.Now().Add(time.Second * 5))
+	// })
 	g.OnData(func(c *Conn, data []byte) {
 		recved := atomic.AddInt64(&total, int64(len(data)))
 		if len(data) > 0 && recved >= int64(clientNum*msgSize) {
@@ -117,7 +160,7 @@ func TestEcho(t *testing.T) {
 	}
 
 	for i := 0; i < clientNum; i++ {
-		if runtime.GOOS != "windows" {
+		if runtime.GOOS != osWindows {
 			one(i)
 		} else {
 			go one(i)
@@ -133,15 +176,19 @@ func TestSendfile(t *testing.T) {
 		panic(err)
 	}
 
-	buf := make([]byte, 1024*100)
+	buf := make([]byte, testFileSize)
 
 	for i := 0; i < 3; i++ {
 		if _, err := conn.Write([]byte("sendfile")); err != nil {
 			log.Panicf("write 'sendfile' failed: %v", err)
 		}
 
-		if _, err := io.ReadFull(conn, buf); err != nil {
+		n, err := io.ReadFull(conn, buf)
+		if err != nil {
 			log.Panicf("read file failed: %v", err)
+		}
+		if n != testFileSize {
+			log.Panicf("read wrong file size: %v != %v", n, testFileSize)
 		}
 	}
 }
@@ -389,8 +436,85 @@ func TestUDP(t *testing.T) {
 	time.Sleep(timeout * 2)
 }
 
+func TestDialAsyncTCP(t *testing.T) {
+	network := "tcp"
+	addr := "127.0.0.1:10001"
+	testDialAsync(t, network, addr)
+}
+
+func TestDialAsyncUDP(t *testing.T) {
+	network := "udp"
+	addr := "127.0.0.1:10001"
+	testDialAsync(t, network, addr)
+}
+
+func TestDialAsyncUnix(t *testing.T) {
+	if runtime.GOOS == osWindows {
+		return
+	}
+	network := "unix"
+	addr := "unix.server"
+	testDialAsync(t, network, addr)
+}
+
+func testDialAsync(t *testing.T, network, addr string) {
+	done := make(chan error, 1)
+	engineAsync := NewEngine(Config{
+		Name:    "udp-testing",
+		Network: network,
+		Addrs:   []string{addr},
+		NPoller: 1,
+	})
+	engineAsync.OnOpen(func(c *Conn) {
+		log.Printf("TestDialAsync[%v, %v] OnOpen: %v, %v", network, addr, c.LocalAddr().String(), c.RemoteAddr().String())
+	})
+	cnt := 0
+	engineAsync.OnData(func(c *Conn, data []byte) {
+		cnt++
+		if cnt == 1 {
+			c.Write(data)
+			log.Printf("TestDialAsync[%v, %v] Server OnData: %v, %v, %v", network, addr, c.LocalAddr().String(), c.RemoteAddr().String(), string(data))
+		} else {
+			log.Printf("TestDialAsync[%v, %v] Client OnData: %v, %v, %v", network, addr, c.LocalAddr().String(), c.RemoteAddr().String(), string(data))
+			close(done)
+		}
+	})
+	engineAsync.OnClose(func(c *Conn, err error) {
+		log.Printf("TestDialAsync[%v, %v] OnClose: %v, %v", network, addr, c.LocalAddr().String(), c.RemoteAddr().String())
+	})
+	err := engineAsync.Start()
+	if err != nil {
+		t.Fatalf("engineAsync  start failed: %v", err)
+	}
+	defer engineAsync.Stop()
+
+	onConnected := func(c *Conn, err error) {
+		log.Printf("TestTestDialAsync[%v, %v] OnConnected: %v, %v, %v", network, addr, c.LocalAddr().String(), c.RemoteAddr().String(), err)
+		if err == nil {
+			var n int
+			n, err = c.Write([]byte("hello"))
+			if err != nil {
+				done <- err
+			}
+			log.Printf("TestTestDialAsync[%v, %v] OnConnected Write n: %v", network, addr, n)
+		} else {
+			done <- err
+		}
+	}
+
+	time.Sleep(time.Second / 10)
+	err = engineAsync.DialAsyncTimeout(network, addr, time.Second*10, onConnected)
+	if err != nil {
+		t.Fatalf("TestTestDialAsync[%v, %v] DialAsyncTimeout failed: %v", network, addr, err)
+	}
+	err = <-done
+	if err != nil {
+		t.Fatalf("TestTestDialAsync[%v, %v] DialAsyncTimeout failed: %v", network, addr, err)
+	}
+}
+
 func TestUnix(t *testing.T) {
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == osWindows {
 		return
 	}
 
@@ -456,6 +580,6 @@ func TestUnix(t *testing.T) {
 }
 
 func TestStop(t *testing.T) {
-	gopher.Stop()
+	engine.Stop()
 	os.Remove(testfile)
 }
