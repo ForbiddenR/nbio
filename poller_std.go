@@ -8,7 +8,6 @@
 package nbio
 
 import (
-	"errors"
 	"net"
 	"runtime"
 	"time"
@@ -22,9 +21,6 @@ const (
 
 	// EPOLLET .
 	EPOLLET = 1
-
-	// EPOLLONESHOT .
-	EPOLLONESHOT = 0
 )
 
 type poller struct {
@@ -42,7 +38,6 @@ type poller struct {
 	chStop chan struct{}
 }
 
-//go:norace
 func (p *poller) accept() error {
 	conn, err := p.listener.Accept()
 	if err != nil {
@@ -56,7 +51,6 @@ func (p *poller) accept() error {
 	return nil
 }
 
-//go:norace
 func (p *poller) readConn(c *Conn) {
 	for {
 		buffer := p.g.borrow(c)
@@ -69,8 +63,7 @@ func (p *poller) readConn(c *Conn) {
 	}
 }
 
-//go:norace
-func (p *poller) addConn(c *Conn) error {
+func (p *poller) addConn(c *Conn, virtualUDPConn ...interface{}) error {
 	c.p = p
 	p.g.mux.Lock()
 	p.g.connsStd[c] = struct{}{}
@@ -78,8 +71,6 @@ func (p *poller) addConn(c *Conn) error {
 	// should not call onOpen for udp server conn
 	if c.typ != ConnTypeUDPServer {
 		p.g.onOpen(c)
-	} else {
-		p.g.onUDPListen(c)
 	}
 	// should not read udp client from reading udp server conn
 	if c.typ != ConnTypeUDPClientFromRead {
@@ -89,17 +80,6 @@ func (p *poller) addConn(c *Conn) error {
 	return nil
 }
 
-//go:norace
-func (p *poller) addDialer(c *Conn) error {
-	c.p = p
-	p.g.mux.Lock()
-	p.g.connsStd[c] = struct{}{}
-	p.g.mux.Unlock()
-	go p.readConn(c)
-	return nil
-}
-
-//go:norace
 func (p *poller) deleteConn(c *Conn) {
 	p.g.mux.Lock()
 	delete(p.g.connsStd, c)
@@ -110,9 +90,8 @@ func (p *poller) deleteConn(c *Conn) {
 	}
 }
 
-//go:norace
 func (p *poller) start() {
-	if p.g.LockListener {
+	if p.g.lockListener {
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
 	}
@@ -127,9 +106,8 @@ func (p *poller) start() {
 		for !p.shutdown {
 			err = p.accept()
 			if err != nil {
-				var ne net.Error
-				if ok := errors.As(err, &ne); ok && ne.Timeout() {
-					logging.Error("NBIO[%v][%v_%v] Accept failed: timeout error, retrying...", p.g.Name, p.pollType, p.index)
+				if ne, ok := err.(net.Error); ok && ne.Timeout() {
+					logging.Error("NBIO[%v][%v_%v] Accept failed: temporary error, retrying...", p.g.Name, p.pollType, p.index)
 					time.Sleep(time.Second / 20)
 				} else {
 					if !p.shutdown {
@@ -144,7 +122,6 @@ func (p *poller) start() {
 	<-p.chStop
 }
 
-//go:norace
 func (p *poller) stop() {
 	logging.Debug("NBIO[%v][%v_%v] stop...", p.g.Name, p.pollType, p.index)
 	p.shutdown = true
@@ -154,7 +131,6 @@ func (p *poller) stop() {
 	close(p.chStop)
 }
 
-//go:norace
 func newPoller(g *Engine, isListener bool, index int) (*poller, error) {
 	p := &poller{
 		g:          g,
@@ -165,8 +141,8 @@ func newPoller(g *Engine, isListener bool, index int) (*poller, error) {
 
 	if isListener {
 		var err error
-		var addr = g.Addrs[index%len(g.Addrs)]
-		p.listener, err = g.Listen(g.Network, addr)
+		var addr = g.addrs[index%len(g.addrs)]
+		p.listener, err = g.listen(g.network, addr)
 		if err != nil {
 			return nil, err
 		}
@@ -176,9 +152,4 @@ func newPoller(g *Engine, isListener bool, index int) (*poller, error) {
 	}
 
 	return p, nil
-}
-
-//go:norace
-func (c *Conn) ResetPollerEvent() {
-
 }

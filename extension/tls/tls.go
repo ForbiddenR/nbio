@@ -1,7 +1,5 @@
 package tls
 
-// deprecated.
-
 import (
 	"github.com/lesismal/llib/std/crypto/tls"
 	"github.com/lesismal/nbio"
@@ -15,8 +13,6 @@ type Conn = tls.Conn
 type Config = tls.Config
 
 // Dial returns a net.Conn to be added to a Engine.
-//
-//go:norace
 func Dial(network, addr string, config *Config) (*tls.Conn, error) {
 	tlsConn, err := tls.Dial(network, addr, config, mempool.DefaultMemPool)
 	if err != nil {
@@ -27,8 +23,6 @@ func Dial(network, addr string, config *Config) (*tls.Conn, error) {
 }
 
 // WrapOpen returns an opening handler of nbio.Engine.
-//
-//go:norace
 func WrapOpen(tlsConfig *Config, isClient bool, h func(c *nbio.Conn, tlsConn *Conn)) func(c *nbio.Conn) {
 	return func(c *nbio.Conn) {
 		var tlsConn *tls.Conn
@@ -47,8 +41,6 @@ func WrapOpen(tlsConfig *Config, isClient bool, h func(c *nbio.Conn, tlsConn *Co
 }
 
 // WrapClose returns an closing handler of nbio.Engine.
-//
-//go:norace
 func WrapClose(h func(c *nbio.Conn, tlsConn *Conn, err error)) func(c *nbio.Conn, err error) {
 	return func(c *nbio.Conn, err error) {
 		if h != nil && c != nil {
@@ -62,8 +54,6 @@ func WrapClose(h func(c *nbio.Conn, tlsConn *Conn, err error)) func(c *nbio.Conn
 }
 
 // WrapData returns a data handler of nbio.Engine.
-//
-//go:norace
 func WrapData(h func(c *nbio.Conn, tlsConn *Conn, data []byte), args ...interface{}) func(c *nbio.Conn, data []byte) {
 	getBuffer := func() []byte {
 		return make([]byte, 2048)

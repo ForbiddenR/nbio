@@ -9,16 +9,6 @@ import (
 )
 
 var (
-	ErrReadTimeout = errors.New("read timeout")
-	errReadTimeout = ErrReadTimeout
-
-	ErrWriteTimeout = errors.New("write timeout")
-	errWriteTimeout = ErrWriteTimeout
-
-	ErrOverflow = errors.New("write overflow")
-	errOverflow = ErrOverflow
-
-	ErrDialTimeout = errors.New("dial timeout")
-
-	ErrUnsupported = errors.New("unsupported operation")
+	errReadTimeout  = errors.New("read timeout")
+	errWriteTimeout = errors.New("write timeout")
 )

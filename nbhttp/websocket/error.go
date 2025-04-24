@@ -6,7 +6,6 @@ package websocket
 
 import (
 	"errors"
-	"fmt"
 )
 
 var (
@@ -40,17 +39,14 @@ var (
 	// ErrReserveBitSet .
 	ErrReserveBitSet = errors.New("websocket: reserved bit set it frame")
 
-	// ErrReservedMessageType .
-	ErrReservedMessageType = errors.New("websocket: reserved message type received")
+	// ErrReservedOpcodeSet .
+	ErrReservedOpcodeSet = errors.New("websocket: reserved opcode received")
 
 	// ErrControlMessageFragmented .
 	ErrControlMessageFragmented = errors.New("websocket: control messages must not be fragmented")
 
-	// ErrControlMessageTooBig .
-	ErrControlMessageTooBig = errors.New("websocket: control frame length > 125")
-
-	// ErrFragmentsShouldNotHaveBinaryOrTextMessage .
-	ErrFragmentsShouldNotHaveBinaryOrTextMessage = errors.New("websocket: fragments should not have message type of text or binary")
+	// ErrFragmentsShouldNotHaveBinaryOrTextOpcode .
+	ErrFragmentsShouldNotHaveBinaryOrTextOpcode = errors.New("websocket: fragments should not have opcode of text or binary")
 
 	// ErrInvalidCloseCode .
 	ErrInvalidCloseCode = errors.New("websocket: invalid close code")
@@ -61,14 +57,8 @@ var (
 	// ErrInvalidCompression .
 	ErrInvalidCompression = errors.New("websocket: invalid compression negotiation")
 
-	// ErrInvalidUtf8 .
-	ErrInvalidUtf8 = errors.New("websocket: invalid UTF-8 bytes")
-
-	// ErrInvalidFragmentMessage .
-	ErrInvalidFragmentMessage = errors.New("invalid fragment message")
-
 	// ErrMalformedURL .
-	ErrMalformedURL = errors.New("websocket: malformed ws or wss URL")
+	ErrMalformedURL = errors.New("malformed ws or wss URL")
 
 	// ErrMessageTooLarge.
 	ErrMessageTooLarge = errors.New("message exceeds the configured limit")
@@ -76,38 +66,3 @@ var (
 	// ErrMessageSendQuqueIsFull .
 	ErrMessageSendQuqueIsFull = errors.New("message send queue is full")
 )
-
-// CloseError .
-type CloseError struct {
-	Code   int
-	Reason string
-}
-
-// Error .
-//
-//go:norace
-func (ce CloseError) Error() string {
-	return fmt.Sprintf("websocket: close code=%d and reason=%q", ce.Code, ce.Reason)
-}
-
-// CloseCode .
-//
-//go:norace
-func CloseCode(err error) int {
-	var ce CloseError
-	if errors.As(err, &ce) {
-		return ce.Code
-	}
-	return -1
-}
-
-// CloseReason .
-//
-//go:norace
-func CloseReason(err error) string {
-	var ce CloseError
-	if errors.As(err, &ce) {
-		return ce.Reason
-	}
-	return ""
-}

@@ -27,34 +27,30 @@ const (
 	MaxInt = int64(int(MaxUint >> 1))
 )
 
-type ParserCloser interface {
-	UnderlayerConn() net.Conn
-	Parse(data []byte) error
-	CloseAndClean(err error)
-}
-
 // Parser .
 type Parser struct {
 	mux sync.Mutex
 
-	// bytesCached for half packet.
-	bytesCached *[]byte
+	cache []byte
 
-	// errClose error
+	state    int8
+	isClient bool
+
+	readLimit int
+
+	errClose error
 
 	onClose func(p *Parser, err error)
 
-	ParserCloser ParserCloser
+	Processor Processor
+
+	Reader ReadCloser
 
 	Engine *Engine
 
-	// Underlayer Conn.
 	Conn net.Conn
 
-	// used to call message handler when got a full Request/Response.
 	Execute func(f func()) bool
-
-	Processor Processor
 
 	// http fields
 	proto         string
@@ -66,19 +62,10 @@ type Parser struct {
 	trailer       http.Header
 	contentLength int
 	chunkSize     int
-
-	state        int8
-	chunked      bool
-	isClient     bool
-	headerExists bool
+	chunked       bool
+	headerExists  bool
 }
 
-//go:norace
-func (p *Parser) UnderlayerConn() net.Conn {
-	return p.Conn
-}
-
-//go:norace
 func (p *Parser) nextState(state int8) {
 	switch p.state {
 	case stateClose:
@@ -87,17 +74,13 @@ func (p *Parser) nextState(state int8) {
 	}
 }
 
-// OnClose registers callback for closing.
-//
-//go:norace
+// OnClose .
 func (p *Parser) OnClose(h func(p *Parser, err error)) {
 	p.onClose = h
 }
 
-// CloseAndClean closes the underlayer connection and cleans up related.
-//
-//go:norace
-func (p *Parser) CloseAndClean(err error) {
+// Close .
+func (p *Parser) Close(err error) {
 	p.mux.Lock()
 	defer p.mux.Unlock()
 
@@ -107,23 +90,22 @@ func (p *Parser) CloseAndClean(err error) {
 
 	p.state = stateClose
 
-	// p.errClose = err
+	p.errClose = err
 
-	// if p.ReadCloser != nil {
-	// 	p.ReadCloser.CloseWithError(p.errClose)
-	// }
-	if p.Processor != nil {
-		p.Processor.Close(p, err)
+	if p.Reader != nil {
+		p.Reader.Close(p, p.errClose)
 	}
-	if p.bytesCached != nil && len(*p.bytesCached) > 0 {
-		mempool.Free(p.bytesCached)
+	if p.Processor != nil {
+		p.Processor.Close(p, p.errClose)
+	}
+	if len(p.cache) > 0 {
+		mempool.Free(p.cache)
 	}
 	if p.onClose != nil {
 		p.onClose(p, err)
 	}
 }
 
-//go:norace
 func parseAndValidateChunkSize(originalStr string) (int, error) {
 	chunkSize, err := strconv.ParseInt(originalStr, 16, 63)
 	if err != nil {
@@ -138,12 +120,8 @@ func parseAndValidateChunkSize(originalStr string) (int, error) {
 	return int(chunkSize), nil
 }
 
-// Parse parses data bytes and calls HTTP handler when full request received.
-// If the connection is upgraded, it passes the data bytes to the ParserCloser
-// and doesn't parse them itself any more.
-//
-//go:norace
-func (p *Parser) Parse(data []byte) error {
+// Read .
+func (p *Parser) Read(data []byte) error {
 	p.mux.Lock()
 	defer p.mux.Unlock()
 
@@ -155,37 +133,33 @@ func (p *Parser) Parse(data []byte) error {
 		return nil
 	}
 
+	var c byte
 	var start = 0
-	var offset = 0
-	if p.bytesCached != nil {
-		offset = len(*p.bytesCached)
-	}
+	var offset = len(p.cache)
 	if offset > 0 {
-		if p.Engine.ReadLimit > 0 && offset+len(data) > p.Engine.ReadLimit {
+		if offset+len(data) > p.readLimit {
 			return ErrTooLong
 		}
-		p.bytesCached = mempool.Append(p.bytesCached, data...)
-		data = *p.bytesCached
+		p.cache = mempool.Append(p.cache, data...)
+		data = p.cache
 	}
 
 UPGRADER:
-	if p.ParserCloser != nil {
+	if p.Reader != nil {
 		udata := data
 		if start > 0 {
 			udata = data[start:]
 		}
-		err := p.ParserCloser.Parse(udata)
-		if p.bytesCached != nil {
-			mempool.Free(p.bytesCached)
-			p.bytesCached = nil
+		err := p.Reader.Read(p, udata)
+		if p.cache != nil {
+			mempool.Free(p.cache)
+			p.cache = nil
 		}
 		return err
 	}
 
-	var c byte
 	for i := offset; i < len(data); i++ {
-		if p.ParserCloser != nil {
-			p.Processor.Clean(p)
+		if p.Reader != nil {
 			goto UPGRADER
 		}
 		c = data[i]
@@ -205,7 +179,7 @@ UPGRADER:
 				if !isValidMethod(method) {
 					return ErrInvalidMethod
 				}
-				p.Processor.OnMethod(p, method)
+				p.Processor.OnMethod(method)
 				start = i + 1
 				p.nextState(statePathBefore)
 				continue
@@ -228,7 +202,7 @@ UPGRADER:
 		case statePath:
 			if c == ' ' {
 				var uri = string(data[start:i])
-				if err := p.Processor.OnURL(p, uri); err != nil {
+				if err := p.Processor.OnURL(uri); err != nil {
 					return err
 				}
 				start = i + 1
@@ -249,7 +223,7 @@ UPGRADER:
 				if p.proto == "" {
 					p.proto = string(data[start:i])
 				}
-				if err := p.Processor.OnProto(p, p.proto); err != nil {
+				if err := p.Processor.OnProto(p.proto); err != nil {
 					p.proto = ""
 					return err
 				}
@@ -269,7 +243,7 @@ UPGRADER:
 				if p.proto == "" {
 					p.proto = string(data[start:i])
 				}
-				if err := p.Processor.OnProto(p, p.proto); err != nil {
+				if err := p.Processor.OnProto(p.proto); err != nil {
 					p.proto = ""
 					return err
 				}
@@ -322,7 +296,7 @@ UPGRADER:
 				if p.status == "" {
 					p.status = string(data[start:i])
 				}
-				p.Processor.OnStatus(p, p.statusCode, p.status)
+				p.Processor.OnStatus(p.statusCode, p.status)
 				p.statusCode = 0
 				p.status = ""
 				p.nextState(stateStatusLF)
@@ -363,7 +337,7 @@ UPGRADER:
 					return err
 				}
 
-				p.Processor.OnContentLength(p, p.contentLength)
+				p.Processor.OnContentLength(p.contentLength)
 				err = p.parseTrailer()
 				if err != nil {
 					return err
@@ -416,7 +390,7 @@ UPGRADER:
 				default:
 				}
 
-				p.Processor.OnHeader(p, p.headerKey, p.headerValue)
+				p.Processor.OnHeader(p.headerKey, p.headerValue)
 				p.headerKey = ""
 				p.headerValue = ""
 
@@ -446,7 +420,7 @@ UPGRADER:
 				default:
 				}
 
-				p.Processor.OnHeader(p, p.headerKey, p.headerValue)
+				p.Processor.OnHeader(p.headerKey, p.headerValue)
 				p.headerKey = ""
 				p.headerValue = ""
 
@@ -477,10 +451,7 @@ UPGRADER:
 			cl := p.contentLength
 			left := len(data) - start
 			if left >= cl {
-				err := p.Processor.OnBody(p, data[start:start+cl])
-				if err != nil {
-					return err
-				}
+				p.Processor.OnBody(data[start : start+cl])
 				p.handleMessage()
 				start += cl
 				i = start - 1
@@ -547,10 +518,7 @@ UPGRADER:
 			cl := p.chunkSize
 			left := len(data) - start
 			if left >= cl {
-				err := p.Processor.OnBody(p, data[start:start+cl])
-				if err != nil {
-					return err
-				}
+				p.Processor.OnBody(data[start : start+cl])
 				start += cl
 				i = start - 1
 				p.nextState(stateBodyChunkDataCR)
@@ -617,7 +585,7 @@ UPGRADER:
 				if p.headerValue == "" {
 					p.headerValue = string(data[start:i])
 				}
-				p.Processor.OnTrailerHeader(p, p.headerKey, p.headerValue)
+				p.Processor.OnTrailerHeader(p.headerKey, p.headerValue)
 				p.headerKey = ""
 				p.headerValue = ""
 
@@ -645,7 +613,7 @@ UPGRADER:
 				}
 				delete(p.trailer, p.headerKey)
 
-				p.Processor.OnTrailerHeader(p, p.headerKey, p.headerValue)
+				p.Processor.OnTrailerHeader(p.headerKey, p.headerValue)
 				start = i + 1
 				p.headerKey = ""
 				p.headerValue = ""
@@ -675,24 +643,23 @@ UPGRADER:
 Exit:
 	left := len(data) - start
 	if left > 0 {
-		if p.bytesCached == nil {
-			p.bytesCached = mempool.Malloc(left)
-			copy(*p.bytesCached, data[start:])
+		if p.cache == nil {
+			p.cache = mempool.Malloc(left)
+			copy(p.cache, data[start:])
 		} else if start > 0 {
-			oldbytesCached := p.bytesCached
-			p.bytesCached = mempool.Malloc(left)
-			copy(*p.bytesCached, data[start:])
-			mempool.Free(oldbytesCached)
+			oldCache := p.cache
+			p.cache = mempool.Malloc(left)
+			copy(p.cache, data[start:])
+			mempool.Free(oldCache)
 		}
-	} else if p.bytesCached != nil && len(*p.bytesCached) > 0 {
-		mempool.Free(p.bytesCached)
-		p.bytesCached = nil
+	} else if len(p.cache) > 0 {
+		mempool.Free(p.cache)
+		p.cache = nil
 	}
 
 	return nil
 }
 
-//go:norace
 func (p *Parser) parseTransferEncoding() error {
 	raw, present := p.header[transferEncodingHeader]
 	if !present {
@@ -712,7 +679,6 @@ func (p *Parser) parseTransferEncoding() error {
 	return nil
 }
 
-//go:norace
 func (p *Parser) parseContentLength() (err error) {
 	if cl := p.header.Get(contentLengthHeader); cl != "" {
 		if p.chunked {
@@ -744,7 +710,6 @@ func (p *Parser) parseContentLength() (err error) {
 	return nil
 }
 
-//go:norace
 func (p *Parser) parseTrailer() error {
 	if !p.chunked {
 		return nil
@@ -792,7 +757,6 @@ func (p *Parser) parseTrailer() error {
 	return nil
 }
 
-//go:norace
 func (p *Parser) handleMessage() {
 	p.Processor.OnComplete(p)
 	p.chunked = false
@@ -806,16 +770,17 @@ func (p *Parser) handleMessage() {
 	}
 }
 
-// NewParser creates an HTTP parser.
-//
-//go:norace
-func NewParser(conn net.Conn, engine *Engine, processor Processor, isClient bool, executor func(f func()) bool) *Parser {
+// NewParser .
+func NewParser(processor Processor, isClient bool, readLimit int, executor func(f func()) bool) *Parser {
 	if processor == nil {
 		processor = NewEmptyProcessor()
 	}
 	state := stateMethodBefore
 	if isClient {
 		state = stateClientProtoBefore
+	}
+	if readLimit <= 0 {
+		readLimit = DefaultHTTPReadLimit
 	}
 	if executor == nil {
 		executor = func(f func()) bool {
@@ -825,11 +790,10 @@ func NewParser(conn net.Conn, engine *Engine, processor Processor, isClient bool
 	}
 	p := &Parser{
 		state:     state,
+		readLimit: readLimit,
 		isClient:  isClient,
-		Processor: processor,
-		Conn:      conn,
-		Engine:    engine,
 		Execute:   executor,
+		Processor: processor,
 	}
 	return p
 }

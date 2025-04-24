@@ -28,7 +28,6 @@ const (
 type Dialer struct {
 	Engine *nbhttp.Engine
 
-	Options  *Options
 	Upgrader *Upgrader
 
 	Jar http.CookieJar
@@ -49,8 +48,6 @@ type Dialer struct {
 }
 
 // Dial .
-//
-//go:norace
 func (d *Dialer) Dial(urlStr string, requestHeader http.Header, v ...interface{}) (*Conn, *http.Response, error) {
 	ctx := context.Background()
 	if d.DialTimeout > 0 {
@@ -60,19 +57,14 @@ func (d *Dialer) Dial(urlStr string, requestHeader http.Header, v ...interface{}
 }
 
 // DialContext .
-//
-//go:norace
 func (d *Dialer) DialContext(ctx context.Context, urlStr string, requestHeader http.Header, v ...interface{}) (*Conn, *http.Response, error) {
 	if d.Cancel != nil {
 		defer d.Cancel()
 	}
 
-	options := d.Options
-	if options == nil {
-		options = d.Upgrader
-	}
-	if options == nil {
-		return nil, nil, errors.New("invalid Options: nil")
+	upgrader := d.Upgrader
+	if upgrader == nil {
+		return nil, nil, errors.New("invalid Upgrader: nil")
 	}
 
 	challengeKey, err := challengeKey()
@@ -141,7 +133,7 @@ func (d *Dialer) DialContext(ctx context.Context, urlStr string, requestHeader h
 		}
 	}
 
-	if options.enableCompression {
+	if d.EnableCompression {
 		req.Header[secWebsocketExtHeaderField] = []string{"permessage-deflate; server_no_context_takeover; client_no_context_takeover"}
 	}
 
@@ -193,13 +185,7 @@ func (d *Dialer) DialContext(ctx context.Context, urlStr string, requestHeader h
 
 		nbc, ok := conn.(*nbio.Conn)
 		if !ok {
-			nbhttpConn, ok2 := conn.(*nbhttp.Conn)
-			if !ok2 {
-				err = ErrBadHandshake
-				notifyResult(err)
-				return
-			}
-			tlsConn, tlsOk := nbhttpConn.Conn.(*tls.Conn)
+			tlsConn, tlsOk := conn.(*tls.Conn)
 			if !tlsOk {
 				err = ErrBadHandshake
 				notifyResult(err)
@@ -219,6 +205,8 @@ func (d *Dialer) DialContext(ctx context.Context, urlStr string, requestHeader h
 			notifyResult(err)
 			return
 		}
+
+		parser.Reader = upgrader
 
 		if d.Jar != nil {
 			if rc := resp.Cookies(); len(rc) > 0 {
@@ -252,14 +240,16 @@ func (d *Dialer) DialContext(ctx context.Context, urlStr string, requestHeader h
 			break
 		}
 
-		wsConn = NewClientConn(options, conn, resp.Header.Get(secWebsocketProtoHeaderField), remoteCompressionEnabled, false)
-		parser.ParserCloser = wsConn
-		wsConn.Engine = parser.Engine
-		wsConn.Execute = parser.Execute
-		nbc.SetSession(wsConn)
+		wsConn = NewConn(upgrader, conn, resp.Header.Get(secWebsocketProtoHeaderField), remoteCompressionEnabled, false)
+		wsConn.isClient = true
+		wsConn.Engine = d.Engine
+		wsConn.OnClose(upgrader.onClose)
 
-		if wsConn.openHandler != nil {
-			wsConn.openHandler(wsConn)
+		upgrader.conn = wsConn
+		upgrader.Engine = parser.Engine
+
+		if upgrader.openHandler != nil {
+			upgrader.openHandler(wsConn)
 		}
 
 		notifyResult(err)

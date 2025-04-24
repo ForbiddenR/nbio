@@ -2,8 +2,8 @@
 // Use of this source code is governed by an MIT-style
 // license that can be found in the LICENSE file.
 
-//go:build windows
-// +build windows
+//go:build darwin || netbsd || freebsd || openbsd || dragonfly
+// +build darwin netbsd freebsd openbsd dragonfly
 
 package nbio
 
@@ -21,9 +21,9 @@ func (c *Conn) Sendfile(f *os.File, remain int64) (written int64, err error) {
 	}
 
 	if remain <= 0 {
-		stat, e := f.Stat()
+		stat, err := f.Stat()
 		if err != nil {
-			return 0, e
+			return 0, err
 		}
 		remain = stat.Size()
 	}
@@ -37,7 +37,6 @@ func (c *Conn) Sendfile(f *os.File, remain int64) (written int64, err error) {
 		nr, er := f.Read(buf)
 		if nr > 0 {
 			nw, ew := c.Write(buf[0:nr])
-			mempool.Free(buf)
 			if nw < 0 {
 				nw = 0
 			}

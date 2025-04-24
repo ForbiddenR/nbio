@@ -8,12 +8,29 @@ import (
 	"sync"
 )
 
+type Allocator interface {
+	Malloc(size int) []byte
+	Realloc(buf []byte, size int) []byte
+	Append(buf []byte, more ...byte) []byte
+	AppendString(buf []byte, more string) []byte
+	Free(buf []byte)
+}
+
+// DefaultMemPool .
+var DefaultMemPool = New(1024, 1024*1024*1024)
+
 // MemPool .
 type MemPool struct {
-	*debugger
+	// Debug bool
+	// mux   sync.Mutex
+
 	bufSize  int
 	freeSize int
 	pool     *sync.Pool
+
+	// allocCnt    uint64
+	// freeCnt     uint64
+	// allocStacks map[uintptr]string
 }
 
 // New .
@@ -29,7 +46,6 @@ func New(bufSize, freeSize int) Allocator {
 	}
 
 	mp := &MemPool{
-		debugger: &debugger{},
 		bufSize:  bufSize,
 		freeSize: freeSize,
 		pool:     &sync.Pool{},
@@ -39,68 +55,108 @@ func New(bufSize, freeSize int) Allocator {
 		buf := make([]byte, bufSize)
 		return &buf
 	}
+
 	return mp
 }
 
 // Malloc .
-func (mp *MemPool) Malloc(size int) *[]byte {
-	var ret []byte
+func (mp *MemPool) Malloc(size int) []byte {
 	if size > mp.freeSize {
-		ret = make([]byte, size)
-		mp.incrMalloc(&ret)
-		return &ret
+		return make([]byte, size)
 	}
 	pbuf := mp.pool.Get().(*[]byte)
 	n := cap(*pbuf)
 	if n < size {
 		*pbuf = append((*pbuf)[:n], make([]byte, size-n)...)
 	}
-	(*pbuf) = (*pbuf)[:size]
-	mp.incrMalloc(pbuf)
-	return pbuf
+	return (*pbuf)[:size]
 }
 
 // Realloc .
-func (mp *MemPool) Realloc(pbuf *[]byte, size int) *[]byte {
-	if size <= cap(*pbuf) {
-		*pbuf = (*pbuf)[:size]
-		return pbuf
+func (mp *MemPool) Realloc(buf []byte, size int) []byte {
+	if size <= cap(buf) {
+		return buf[:size]
 	}
 
-	if cap(*pbuf) < mp.freeSize {
-		newBufPtr := mp.pool.Get().(*[]byte)
-		n := cap(*newBufPtr)
+	if cap(buf) < mp.freeSize {
+		pbuf := mp.pool.Get().(*[]byte)
+		n := cap(buf)
 		if n < size {
-			*newBufPtr = append((*newBufPtr)[:n], make([]byte, size-n)...)
+			*pbuf = append((*pbuf)[:n], make([]byte, size-n)...)
 		}
-		*newBufPtr = (*newBufPtr)[:size]
-		copy(*newBufPtr, *pbuf)
-		mp.Free(pbuf)
-		return newBufPtr
+		*pbuf = (*pbuf)[:size]
+		copy(*pbuf, buf)
+		mp.Free(buf)
+		return *pbuf
 	}
-	*pbuf = append((*pbuf)[:cap(*pbuf)], make([]byte, size-cap(*pbuf))...)[:size]
-	return pbuf
+	return append(buf[:cap(buf)], make([]byte, size-cap(buf))...)[:size]
 }
 
 // Append .
-func (mp *MemPool) Append(pbuf *[]byte, more ...byte) *[]byte {
-	*pbuf = append(*pbuf, more...)
-	return pbuf
+func (mp *MemPool) Append(buf []byte, more ...byte) []byte {
+	return append(buf, more...)
 }
 
 // AppendString .
-func (mp *MemPool) AppendString(pbuf *[]byte, more string) *[]byte {
-	*pbuf = append(*pbuf, more...)
-	return pbuf
+func (mp *MemPool) AppendString(buf []byte, more string) []byte {
+	return append(buf, more...)
 }
 
 // Free .
-func (mp *MemPool) Free(pbuf *[]byte) {
-	if pbuf != nil && cap(*pbuf) > 0 {
-		mp.incrFree(pbuf)
-		if cap(*pbuf) > mp.freeSize {
-			return
-		}
-		mp.pool.Put(pbuf)
+func (mp *MemPool) Free(buf []byte) {
+	if cap(buf) > mp.freeSize {
+		return
 	}
+	mp.pool.Put(&buf)
+}
+
+// NativeAllocator definition.
+type NativeAllocator struct{}
+
+// Malloc .
+func (a *NativeAllocator) Malloc(size int) []byte {
+	return make([]byte, size)
+}
+
+// Realloc .
+func (a *NativeAllocator) Realloc(buf []byte, size int) []byte {
+	if size <= cap(buf) {
+		return buf[:size]
+	}
+	newBuf := make([]byte, size)
+	copy(newBuf, buf)
+	return newBuf
+}
+
+// Free .
+func (a *NativeAllocator) Free(buf []byte) {
+}
+
+// Malloc exports default package method.
+func Malloc(size int) []byte {
+	return DefaultMemPool.Malloc(size)
+}
+
+// Realloc exports default package method.
+func Realloc(buf []byte, size int) []byte {
+	return DefaultMemPool.Realloc(buf, size)
+}
+
+// Append exports default package method.
+func Append(buf []byte, more ...byte) []byte {
+	return DefaultMemPool.Append(buf, more...)
+}
+
+// AppendString exports default package method.
+func AppendString(buf []byte, more string) []byte {
+	return DefaultMemPool.AppendString(buf, more)
+}
+
+// Free exports default package method.
+func Free(buf []byte) {
+	DefaultMemPool.Free(buf)
+}
+
+func Init(bufSize, freeSize int) {
+	DefaultMemPool = New(bufSize, freeSize)
 }
