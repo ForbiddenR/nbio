@@ -331,6 +331,11 @@ func (c *Conn) nextFrame() (int, MessageType, []byte, bool, bool, bool, error) {
 		payloadLen := (*pdata)[1] & 0x7F
 		bodyLen := int64(-1)
 
+		if res1 || res2 || res3 {
+			// return 0, 0, nil, false, fin, res1, errors.New(fmt.Sprintf("websocket: reserved bit is set: [%x]", (*pdata)[:min(10, len(*pdata))]))
+			return 0, 0, nil, false, fin, res1, fmt.Errorf("websocket: reserved bit is set: [%x]", (*pdata)[:min(30, len(*pdata))])
+		}
+
 		switch payloadLen {
 		case 126:
 			if l >= 4 {
