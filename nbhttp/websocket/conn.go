@@ -13,11 +13,9 @@ import (
 	"io"
 	"math/rand"
 	"net"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
-	"unsafe"
 
 	"github.com/lesismal/nbio/logging"
 	"github.com/lesismal/nbio/mempool"
@@ -395,18 +393,6 @@ func (c *Conn) Parse(data []byte) error {
 		c.mux.Unlock()
 		return net.ErrClosed
 	}
-
-	defer func() {
-		if err := recover(); err != nil {
-			const size = 64 << 10
-			buf := make([]byte, size)
-			buf = buf[:runtime.Stack(buf, false)]
-			logging.Error("websocket.Conn.Parse failed: %v\n%v\n",
-				err,
-				*(*string)(unsafe.Pointer(&buf)),
-			)
-		}
-	}()
 
 	readLimit := c.Engine.ReadLimit
 	if readLimit > 0 && (c.bytesCached != nil && (len(*c.bytesCached)+len(data) > readLimit)) {
