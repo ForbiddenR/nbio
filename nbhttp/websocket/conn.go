@@ -13,9 +13,11 @@ import (
 	"io"
 	"math/rand"
 	"net"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/lesismal/nbio/logging"
 	"github.com/lesismal/nbio/mempool"
@@ -331,11 +333,6 @@ func (c *Conn) nextFrame() (int, MessageType, []byte, bool, bool, bool, error) {
 		payloadLen := (*pdata)[1] & 0x7F
 		bodyLen := int64(-1)
 
-		if res1 || res2 || res3 {
-			// return 0, 0, nil, false, fin, res1, errors.New(fmt.Sprintf("websocket: reserved bit is set: [%x]", (*pdata)[:min(10, len(*pdata))]))
-			return 0, 0, nil, false, fin, res1, fmt.Errorf("websocket: reserved bit is set: [%x]", (*pdata)[:min(30, len(*pdata))])
-		}
-
 		switch payloadLen {
 		case 126:
 			if l >= 4 {
@@ -398,6 +395,18 @@ func (c *Conn) Parse(data []byte) error {
 		c.mux.Unlock()
 		return net.ErrClosed
 	}
+
+	defer func() {
+		if err := recover(); err != nil {
+			const size = 64 << 10
+			buf := make([]byte, size)
+			buf = buf[:runtime.Stack(buf, false)]
+			logging.Error("websocket.Conn.Parse failed: %v\n%v\n",
+				err,
+				*(*string)(unsafe.Pointer(&buf)),
+			)
+		}
+	}()
 
 	readLimit := c.Engine.ReadLimit
 	if readLimit > 0 && (c.bytesCached != nil && (len(*c.bytesCached)+len(data) > readLimit)) {
