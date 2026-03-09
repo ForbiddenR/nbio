@@ -24,19 +24,19 @@ var (
 	emptyClientResponse = http.Response{}
 
 	requestPool = sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return &http.Request{}
 		},
 	}
 
 	responsePool = sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return &Response{}
 		},
 	}
 
 	clientResponsePool = sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return &http.Response{}
 		},
 	}

@@ -6,7 +6,7 @@ import (
 
 func TestMemPool(t *testing.T) {
 	pool := New(1024*1024*1024, 1024*1024*1024)
-	for i := 0; i < 1024*1024; i++ {
+	for i := range 1024 * 1024 {
 		pbuf := pool.Malloc(i)
 		if len(*pbuf) != i {
 			t.Fatalf("invalid len: %v != %v", len(*pbuf), i)

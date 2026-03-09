@@ -12,7 +12,7 @@ import (
 var (
 	emptyBodyReader = BodyReader{}
 	bodyReaderPool  = sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return &BodyReader{}
 		},
 	}

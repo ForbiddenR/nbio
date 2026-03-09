@@ -25,7 +25,7 @@ func TestTimer(t *testing.T) {
 func testAsync(tg *Timer) {
 	loops := 3
 	wg := sync.WaitGroup{}
-	for i := 0; i < loops; i++ {
+	for range loops {
 		wg.Add(1)
 		tg.Async(func() {
 			defer wg.Done()
@@ -79,7 +79,7 @@ func testTimerExecPanic(tg *Timer, timeout time.Duration) {
 
 func testTimerNormalExecMany(tg *Timer, timeout time.Duration) {
 	ch4 := make(chan int, 5)
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		n := i + 1
 		switch n {
 		case 3:
@@ -93,7 +93,7 @@ func testTimerNormalExecMany(tg *Timer, timeout time.Duration) {
 		})
 	}
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		n := <-ch4
 		if n != i+1 {
 			log.Panicf("invalid n: %v, %v", i, n)
@@ -104,14 +104,14 @@ func testTimerNormalExecMany(tg *Timer, timeout time.Duration) {
 func testTimerExecManyRandtime(tg *Timer) {
 	its := make([]*time.Timer, 100)[0:0]
 	ch5 := make(chan int, 100)
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		n := 500 + rand.Int()%200
 		to := time.Duration(n) * time.Second / 1000
 		its = append(its, tg.AfterFunc(to, func() {
 			ch5 <- n
 		}))
 	}
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		if its[0] == nil {
 			log.Panicf("invalid its[0]")
 		}

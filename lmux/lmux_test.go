@@ -53,10 +53,8 @@ func TestListenerMux(t *testing.T) {
 	go accept(listenerD, chD)
 
 	dialN := func(n int, addr string) {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := 0; i < n; i++ {
+		wg.Go(func() {
+			for range n {
 				conn, err := net.Dial(network, addr)
 				if err != nil {
 					chErr <- err
@@ -64,7 +62,7 @@ func TestListenerMux(t *testing.T) {
 				}
 				conns = append(conns, conn)
 			}
-		}()
+		})
 	}
 	closeConns := func() {
 		for _, v := range conns {
@@ -93,7 +91,7 @@ func TestListenerMux(t *testing.T) {
 
 	clean := func(ln *ChanListener, chConn chan net.Conn) {
 		n := len(chConn)
-		for i := 0; i < n; i++ {
+		for range n {
 			<-chConn
 			ln.Decrease()
 		}

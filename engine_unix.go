@@ -3,7 +3,6 @@
 // license that can be found in the LICENSE file.
 
 //go:build linux || darwin || netbsd || freebsd || openbsd || dragonfly
-// +build linux darwin netbsd freebsd openbsd dragonfly
 
 package nbio
 
@@ -37,7 +36,7 @@ func (g *Engine) Start() error {
 		for i := range g.Addrs {
 			ln, err := newPoller(g, true, i)
 			if err != nil {
-				for j := 0; j < i; j++ {
+				for j := range i {
 					g.listeners[j].stop()
 				}
 				return err
@@ -49,14 +48,14 @@ func (g *Engine) Start() error {
 		for i, addrStr := range g.Addrs {
 			addr, err := net.ResolveUDPAddr(g.Network, addrStr)
 			if err != nil {
-				for j := 0; j < i; j++ {
+				for j := range i {
 					_ = udpListeners[j].Close()
 				}
 				return err
 			}
 			ln, err := g.ListenUDP("udp", addr)
 			if err != nil {
-				for j := 0; j < i; j++ {
+				for j := range i {
 					_ = udpListeners[j].Close()
 				}
 				return err

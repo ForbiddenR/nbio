@@ -61,7 +61,7 @@ type Conn struct {
 	closeErr error
 
 	chSessionInited chan struct{}
-	session         interface{}
+	session         any
 
 	subprotocol string
 
@@ -691,10 +691,7 @@ func (c *Conn) WriteMessage(messageType MessageType, data []byte) error {
 		sendOpcode := true
 		sendCompress := compress
 		for len(data) > 0 {
-			n := len(data)
-			if n > c.Engine.MaxWebsocketFramePayloadSize {
-				n = c.Engine.MaxWebsocketFramePayloadSize
-			}
+			n := min(len(data), c.Engine.MaxWebsocketFramePayloadSize)
 			err := c.writeFrame(messageType, sendOpcode, n == len(data), data[:n], sendCompress)
 			if err != nil {
 				return err
@@ -729,7 +726,7 @@ func (c *Conn) Keepalive(d time.Duration) *time.Timer {
 // Session returns user session.
 //
 //go:norace
-func (c *Conn) Session() interface{} {
+func (c *Conn) Session() any {
 	if c.chSessionInited == nil {
 		return c.session
 	}
@@ -739,7 +736,7 @@ func (c *Conn) Session() interface{} {
 // SessionWithLock returns user session with lock, returns as soon as the session has been seted.
 //
 //go:norace
-func (c *Conn) SessionWithLock() interface{} {
+func (c *Conn) SessionWithLock() any {
 	c.mux.Lock()
 	ch := c.chSessionInited
 	c.mux.Unlock()
@@ -753,7 +750,7 @@ func (c *Conn) SessionWithLock() interface{} {
 // waits until the context is done.
 //
 //go:norace
-func (c *Conn) SessionWithContext(ctx context.Context) interface{} {
+func (c *Conn) SessionWithContext(ctx context.Context) any {
 	c.mux.Lock()
 	ch := c.chSessionInited
 	c.mux.Unlock()
@@ -770,7 +767,7 @@ func (c *Conn) SessionWithContext(ctx context.Context) interface{} {
 // SetSession sets user session.
 //
 //go:norace
-func (c *Conn) SetSession(session interface{}) {
+func (c *Conn) SetSession(session any) {
 	c.mux.Lock()
 	c.session = session
 	if c.chSessionInited != nil {
@@ -1142,10 +1139,7 @@ func (c *Conn) readAll(r io.Reader, size int) (*[]byte, error) {
 			if c.isMessageTooLarge(l + 1) {
 				return nil, ErrMessageTooLarge
 			}
-			al := l
-			if al > maxAppendSize {
-				al = maxAppendSize
-			}
+			al := min(l, maxAppendSize)
 			// extend to the limit size at most.
 			if (c.MessageLengthLimit > 0) && (l+al > c.MessageLengthLimit) {
 				al = c.MessageLengthLimit - l

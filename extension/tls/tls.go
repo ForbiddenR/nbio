@@ -64,7 +64,7 @@ func WrapClose(h func(c *nbio.Conn, tlsConn *Conn, err error)) func(c *nbio.Conn
 // WrapData returns a data handler of nbio.Engine.
 //
 //go:norace
-func WrapData(h func(c *nbio.Conn, tlsConn *Conn, data []byte), args ...interface{}) func(c *nbio.Conn, data []byte) {
+func WrapData(h func(c *nbio.Conn, tlsConn *Conn, data []byte), args ...any) func(c *nbio.Conn, data []byte) {
 	getBuffer := func() []byte {
 		return make([]byte, 2048)
 	}

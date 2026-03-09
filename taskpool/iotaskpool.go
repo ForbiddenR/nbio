@@ -42,13 +42,13 @@ func (tp *IOTaskPool) Stop() {
 // NewIO creates and returns a IOTaskPool.
 //
 //go:norace
-func NewIO(concurrent, queueSize, bufSize int, v ...interface{}) *IOTaskPool {
+func NewIO(concurrent, queueSize, bufSize int, v ...any) *IOTaskPool {
 	task := New(concurrent, queueSize, v...)
 
 	tp := &IOTaskPool{
 		task: task,
 		pool: sync.Pool{
-			New: func() interface{} {
+			New: func() any {
 				buf := make([]byte, bufSize)
 				return &buf
 			},

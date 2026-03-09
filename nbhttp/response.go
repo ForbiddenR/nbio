@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"time"
 	"unsafe"
@@ -403,12 +404,10 @@ func (res *Response) checkChunked() {
 	res.chunkChecked = true
 
 	// 1. See if chunking is already set
-	for _, v := range res.header[transferEncodingHeader] {
-		if v == "chunked" {
-			res.chunked = true
-			delete(res.header, contentLengthHeader)
-			return
-		}
+	if slices.Contains(res.header[transferEncodingHeader], "chunked") {
+		res.chunked = true
+		delete(res.header, contentLengthHeader)
+		return
 	}
 
 	// 2. See if we should fall back to chunking

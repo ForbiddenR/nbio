@@ -123,17 +123,17 @@ func init() {
 		}
 	}
 
-	for i := byte(0); i < 10; i++ {
+	for i := range byte(10) {
 		numCharMap['0'+i] = true
 		alphaNumCharMap['0'+i] = true
 		hexCharMap['0'+i] = true
 	}
-	for i := byte(0); i < 6; i++ {
+	for i := range byte(6) {
 		hexCharMap['A'+i] = true
 		hexCharMap['a'+i] = true
 	}
 
-	for i := byte(0); i < 26; i++ {
+	for i := range byte(26) {
 		alphaCharMap['A'+i] = true
 		alphaCharMap['A'+i+dis] = true
 		alphaNumCharMap['A'+i] = true

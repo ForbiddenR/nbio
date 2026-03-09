@@ -3,7 +3,6 @@
 // license that can be found in the LICENSE file.
 
 //go:build linux || darwin || netbsd || freebsd || openbsd || dragonfly
-// +build linux darwin netbsd freebsd openbsd dragonfly
 
 package nbio
 
@@ -134,7 +133,7 @@ type Conn struct {
 	rAddr net.Addr
 
 	// user session.
-	session interface{}
+	session any
 
 	// job list.
 	jobList []func()

@@ -165,7 +165,7 @@ func testParser(t *testing.T, isClient bool, data []byte) error {
 	parser.Engine = engine
 	tBegin := time.Now()
 	loop := 10000
-	for i := 0; i < loop; i++ {
+	for i := range loop {
 		tmp := data
 		reads := [][]byte{}
 		for len(tmp) > 0 {
@@ -209,7 +209,7 @@ func newParser(isClient bool) *Parser {
 
 func newConn() net.Conn {
 	var conn net.Conn
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		addr := fmt.Sprintf("127.0.0.1:%d", 8000+i)
 		ln, err := net.Listen("tcp", addr)
 		if err != nil {
@@ -290,7 +290,7 @@ func BenchmarkServerProcessor(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		for j := 0; j < 5; j++ {
+		for range 5 {
 			err := parser.Parse(benchData)
 			if err != nil {
 				b.Fatal(err)

@@ -18,7 +18,7 @@ type Server struct {
 // NewServer .
 //
 //go:norace
-func NewServer(conf Config, v ...interface{}) *Server {
+func NewServer(conf Config, v ...any) *Server {
 	if len(v) > 0 {
 		if handler, ok := v[0].(http.Handler); ok {
 			conf.Handler = handler
@@ -35,7 +35,7 @@ func NewServer(conf Config, v ...interface{}) *Server {
 // NewServerTLS .
 //
 //go:norace
-func NewServerTLS(conf Config, v ...interface{}) *Server {
+func NewServerTLS(conf Config, v ...any) *Server {
 	if len(v) > 0 {
 		if handler, ok := v[0].(http.Handler); ok {
 			conf.Handler = handler

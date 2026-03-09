@@ -81,7 +81,7 @@ func (tp *TaskPool) Stop() {
 // New creates and returns a TaskPool.
 //
 //go:norace
-func New(maxConcurrent int, chQqueueSize int, v ...interface{}) *TaskPool {
+func New(maxConcurrent int, chQqueueSize int, v ...any) *TaskPool {
 	tp := &TaskPool{
 		maxConcurrent: int64(maxConcurrent - 1),
 		chQqueue:      make(chan func(), chQqueueSize),

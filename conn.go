@@ -66,14 +66,14 @@ func (c *Conn) IsUnix() bool {
 // Session returns user session.
 //
 //go:norace
-func (c *Conn) Session() interface{} {
+func (c *Conn) Session() any {
 	return c.session
 }
 
 // SetSession sets user session.
 //
 //go:norace
-func (c *Conn) SetSession(session interface{}) {
+func (c *Conn) SetSession(session any) {
 	c.session = session
 }
 

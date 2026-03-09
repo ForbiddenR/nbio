@@ -298,7 +298,7 @@ func (u *Upgrader) OnClose(h func(*Conn, error)) {
 // Upgrade .
 //
 //go:norace
-func (u *Upgrader) Upgrade(w http.ResponseWriter, r *http.Request, responseHeader http.Header, args ...interface{}) (*Conn, error) {
+func (u *Upgrader) Upgrade(w http.ResponseWriter, r *http.Request, responseHeader http.Header, args ...any) (*Conn, error) {
 	challengeKey, subprotocol, compress, err := u.commCheck(w, r, responseHeader)
 	if err != nil {
 		return nil, err

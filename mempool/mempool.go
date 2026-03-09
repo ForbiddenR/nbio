@@ -35,7 +35,7 @@ func New(bufSize, freeSize int) Allocator {
 		pool:     &sync.Pool{},
 		// Debug:       true,
 	}
-	mp.pool.New = func() interface{} {
+	mp.pool.New = func() any {
 		buf := make([]byte, bufSize)
 		return &buf
 	}

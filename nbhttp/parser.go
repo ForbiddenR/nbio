@@ -788,7 +788,7 @@ func (p *Parser) parseTrailer() error {
 			}
 			continue
 		}
-		for _, k := range strings.Split(key, ",") {
+		for k := range strings.SplitSeq(key, ",") {
 			if k = textproto.TrimString(k); k != "" {
 				k = http.CanonicalHeaderKey(k)
 				switch k {

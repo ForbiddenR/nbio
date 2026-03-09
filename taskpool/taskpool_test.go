@@ -20,7 +20,7 @@ func BenchmarkGo(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		wg := sync.WaitGroup{}
 		wg.Add(testLoopNum)
-		for j := 0; j < testLoopNum; j++ {
+		for range testLoopNum {
 			go func() {
 				defer func() {
 					if err := recover(); err != nil {
@@ -50,7 +50,7 @@ func BenchmarkTaskPool(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		wg := sync.WaitGroup{}
 		wg.Add(testLoopNum)
-		for j := 0; j < testLoopNum; j++ {
+		for range testLoopNum {
 			p.Go(func() {
 				if sleepTime > 0 {
 					time.Sleep(sleepTime)
@@ -71,7 +71,7 @@ func BenchmarkIOTaskPool(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		wg := sync.WaitGroup{}
 		wg.Add(testLoopNum)
-		for j := 0; j < testLoopNum; j++ {
+		for range testLoopNum {
 			p.Go(func(pbuf *[]byte) {
 				if sleepTime > 0 {
 					time.Sleep(sleepTime)

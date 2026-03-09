@@ -158,7 +158,7 @@ func TestEcho(t *testing.T) {
 		}
 	}
 
-	for i := 0; i < clientNum; i++ {
+	for i := range clientNum {
 		if runtime.GOOS != osWindows {
 			one(i)
 		} else {
@@ -177,7 +177,7 @@ func TestSendfile(t *testing.T) {
 
 	buf := make([]byte, testFileSize)
 
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		if _, err := conn.Write([]byte("sendfile")); err != nil {
 			log.Panicf("write 'sendfile' failed: %v", err)
 		}
@@ -232,7 +232,7 @@ func TestTimeout(t *testing.T) {
 
 func TestFuzz(t *testing.T) {
 	wg := sync.WaitGroup{}
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
@@ -367,13 +367,13 @@ func TestUDP(t *testing.T) {
 	clientNum := 2
 	msgPerClient := 2
 	wg := sync.WaitGroup{}
-	for i := 0; i < clientNum; i++ {
+	for i := range clientNum {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
 			conn := newClientConn()
 			defer func() { _ = conn.Close() }()
-			for j := 0; j < msgPerClient; j++ {
+			for j := range msgPerClient {
 				str := fmt.Sprintf("message-%d", clientNum*idx+j)
 				wbuf := []byte(str)
 				rbuf := make([]byte, 1024)

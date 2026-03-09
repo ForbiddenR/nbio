@@ -17,7 +17,7 @@ const (
 
 var (
 	flateWriterPools [maxCompressionLevel - minCompressionLevel + 1]sync.Pool
-	flateReaderPool  = sync.Pool{New: func() interface{} {
+	flateReaderPool  = sync.Pool{New: func() any {
 		return flate.NewReader(nil)
 	}}
 )
@@ -96,10 +96,7 @@ func (w *truncWriter) Write(p []byte) (int, error) {
 		}
 	}
 
-	m := len(p)
-	if m > len(w.p) {
-		m = len(w.p)
-	}
+	m := min(len(p), len(w.p))
 
 	if nn, err := w.w.Write(w.p[:m]); err != nil {
 		return n + nn, err

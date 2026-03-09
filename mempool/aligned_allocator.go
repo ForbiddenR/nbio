@@ -25,7 +25,7 @@ func init() {
 	for i := range alignedPools {
 		size := 1 << (i + minAlignedBufferSizeBits)
 		poolSizes[i] = size
-		alignedPools[i].New = func() interface{} {
+		alignedPools[i].New = func() any {
 			b := make([]byte, size)
 			return &b
 		}

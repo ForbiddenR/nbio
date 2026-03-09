@@ -17,7 +17,7 @@ func TestBodyReaderPool(t *testing.T) {
 	*br = emptyBodyReader
 	bodyReaderPool.Put(br)
 
-	for i := 0; i < 1000; i++ {
+	for range 1000 {
 		br2 := bodyReaderPool.Get().(*BodyReader)
 		if br2.buffers != nil {
 			t.Fatal("len>0")

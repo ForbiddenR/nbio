@@ -200,7 +200,7 @@ type entryReport struct {
 }
 
 //go:norace
-func decodeFile(path string, x interface{}) error {
+func decodeFile(path string, x any) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return err
@@ -234,14 +234,6 @@ func mustInt(s string) int64 {
 		panic(err)
 	}
 	return x
-}
-
-//go:norace
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 //go:norace
